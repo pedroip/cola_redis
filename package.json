@@ -1,6 +1,6 @@
 {
   "name": "cola_redis",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Gestión de una cola de procesos con gestión de Reintentos, Concurrencia y Fujo",
   "main": "index.js",
   "scripts": {
@@ -12,5 +12,6 @@
   "dependencies": {    
     "events": "^3.3.0",
     "redis": "^3.1.2"    
-  }
+  },
+  "publishConfig": { "registry": "https://github.com/pedroip/cola_redis" }
 }
