@@ -2,16 +2,19 @@
   "name": "cola_redis",
   "version": "1.0.1",
   "description": "Gestión de una cola de procesos con gestión de Reintentos, Concurrencia y Fujo",
-  "main": "index.js",
+  "main": "./index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"  
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "Pedro Miguel Casas de León",
   "license": "ISC",
-  "dependencies": {    
+  "dependencies": {
     "events": "^3.3.0",
-    "redis": "^3.1.2"    
+    "redis": "^3.1.2"
   },
-  "publishConfig": { "registry": "https://github.com/pedroip/cola_redis" }
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/pedroip/cola_redis.git"
+  }  
 }
