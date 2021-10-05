@@ -295,6 +295,7 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
     }
 
     // Variables de Gestión
+    
     // procesos maximos , reintento_segundos , reintento_numero, envios_max_segundo
 
 
