@@ -14,7 +14,7 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
 
     this.db_redis = conexion_redis;
 
-    this.nombre_cola = nombre_cola;
+    this.nombre_cola = nombre_cola+':cola';
     this.procesos_maximos = 5;  
     this.procesos_actuales = 0;
 
@@ -59,7 +59,7 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
                 if (err) {
                     self.emit('error',{
                         'codigo':2,
-                        'mensaje':'Error Push Cola Reintento',   
+                        'mensaje':'Error Push Reintento',   
                         'origen':err,                     
                         'intentos':paquete.intentos,
                         'data':paquete.data                        
@@ -78,22 +78,18 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
                 paquete = JSON.parse(await util.promisify(self.db_redis.RPOP).bind(self.db_redis)(self.nombre_cola)); 
                 if (paquete) {                    
                     try {
+                        paquete.intentos++;
                         let ahora = new Date();  
-                        if (self.envios_max_segundo && self.envios_max_segundo>0) {
-                            //let pausa =  self.procesos_maximos*(1/self.envios_max_segundo)*1000;  
+                        if (self.envios_max_segundo && self.envios_max_segundo>0) {                            
                             let pausa =  (1/self.envios_max_segundo)*1000;  
                             while (self.envios_ultimo && self.envios_ultimo+pausa>ahora.getTime()) {
                                 await self.sleep(self.envios_ultimo+pausa-ahora.getTime()); 
                                 ahora = new Date();
                             }                                                    
                         }   
-                        self.envios_ultimo = ahora.getTime();
-                        
-                        // Llamada al proceso de ejecución de la data
-                        try {
-                            //console.log('Procesado externo:',paquete);
-                            let response_data = await self.proceso_data(paquete);		 
-                            //console.log('Respuesta Procesado externo:',response_data);
+                        self.envios_ultimo = ahora.getTime();                                                
+                        try {                            
+                            let response_data = await self.proceso_data(paquete.data);		                             
                             self.emit('procesado',{
                                 'codigo':0,
                                 'mensaje':'Data Procesado Correctamente',
@@ -102,9 +98,7 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
                                 'espera_ms':ahora.getTime()-paquete.created,
                                 'data':paquete.data                                                                                                        
                             });
-                        } catch (err) {       
-                            console.log(err);                                             
-                            paquete.intentos++;
+                        } catch (err) {                                                              
                             if (paquete.intentos>paquete.intentos_max) {                                
                                 self.emit('error',{
                                     'codigo':6,
@@ -115,14 +109,14 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
                                 });
                             }
                             else {   
+                                self.push_cola_reintento(paquete); 
                                 self.emit('reintento',{
                                     'codigo':7,
                                     'mensaje':'Añadido el Reintento del Procesado',
                                     'origen':err,
                                     'intentos':paquete.intentos,
                                     'data':paquete.data                                                                        
-                                });                             
-                                self.push_cola_reintento(paquete);                            
+                                });                                                                                        
                             }
                         }        
                     } catch (error) {                        
@@ -136,11 +130,10 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
                     } 
 
                 }            
-            } catch (error) {
-                // Error al Check de la cola                
+            } catch (error) {                
                 self.emit('error',{
                     'codigo':5,
-                    'mensaje':'Error Check Cola General',
+                    'mensaje':'Error Chequeo de Cola',
                     'origen':error                                                   
                 });                  
             }    
@@ -152,8 +145,7 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
     }
 
     this.control_time = async function () {
-        // Descargar 
-        // console.log('Control Time:'+new Date());        
+        
         let proximo_control_time = self.reintento_segundos*1000;
         let reintento_fin=new Date().getTime()-proximo_control_time; 
         let paquete = null;
@@ -161,10 +153,8 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
             paquete = JSON.parse(await util.promisify(self.db_redis.RPOP).bind(self.db_redis)(self.reintento_nombre_cola));              
             if (paquete) {
                 if (paquete.intento_time<reintento_fin) {
-                    // Paso el tiempo de espera
                     self.push_cola(paquete);
                 } else {
-                    //Reinsertar en los ms restante hasta procesar el proximo. 
                     proximo_control_time = paquete.intento_time-reintento_fin;
                     self.db_redis.RPUSH(
                         self.reintento_nombre_cola,
@@ -173,7 +163,7 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
                             if (err) {
                                 self.emit('error',{
                                     'codigo':3,
-                                    'mensaje':'Error Push Reencolar Reintento',                                    
+                                    'mensaje':'Error Push Retorno de Reintento',                                    
                                     'origen':err,                                    
                                     'intentos':paquete.intentos,
                                     'data':paquete.data                                    
@@ -189,8 +179,7 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
         if (self.activo) {
             self.check_cola();   
         }  
-
-        console.log('Lanzado Proximo Control Time en Segundos:'+proximo_control_time/1000);        
+         
         self.ProcesoTimeout = setTimeout(self.control_time,proximo_control_time);            
     }    
 
@@ -293,13 +282,6 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
     this.ultimo =  function  () {
         return self.envios_ultimo;
     }
-
-    // Variables de Gestión
-    
-    // procesos maximos , reintento_segundos , reintento_numero, envios_max_segundo
-
-
-    // self.ProcesoTimeout = setTimeout(self.control_time,self.reintento_segundos*1000);      
 
 }
 
