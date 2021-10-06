@@ -22,8 +22,9 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
     this.reintento_segundos = 120;
     this.reintento_numero = 6;
 
-    this.envios_max_segundo = 10;
+    this.envios_max_segundo = 0;
     this.envios_ultimo = null; // Valor en MS
+    this.semaforo_espera_activa = false;
 
     this.ProcesoTimeout = null; 
 
@@ -75,21 +76,27 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
             let paquete = null;
             try {              
                 self.procesos_actuales++;
-                paquete = JSON.parse(await util.promisify(self.db_redis.RPOP).bind(self.db_redis)(self.nombre_cola)); 
+                let ahora = new Date();  
+
+                // Control del ritmo Antes de leer de la cola
+                if (self.envios_max_segundo>0) {
+                    let pausa =  (1/self.envios_max_segundo)*1000;                                  
+                    while (self.semaforo_espera_activa || (self.envios_ultimo && self.envios_ultimo+pausa>ahora.getTime()) ) {
+                        await self.sleep(self.envios_ultimo+pausa-ahora.getTime()); 
+                        ahora = new Date();
+                    }
+                }
+
+                self.semaforo_espera_activa=true;
+                paquete = JSON.parse(await util.promisify(self.db_redis.RPOP).bind(self.db_redis)(self.nombre_cola));                
+                self.semaforo_espera_activa=false;
+
                 if (paquete) {                    
-                    try {
-                        paquete.intentos++;
-                        let ahora = new Date();  
-                        if (self.envios_max_segundo && self.envios_max_segundo>0) {                            
-                            let pausa =  (1/self.envios_max_segundo)*1000;  
-                            while (self.envios_ultimo && self.envios_ultimo+pausa>ahora.getTime()) {
-                                await self.sleep(self.envios_ultimo+pausa-ahora.getTime()); 
-                                ahora = new Date();
-                            }                                                    
-                        }   
-                        self.envios_ultimo = ahora.getTime();                                                
-                        try {                            
-                            let response_data = await self.proceso_data(paquete.data);		                             
+                    try {                        
+                        paquete.intentos++;                        
+                        self.envios_ultimo = ahora.getTime();                                         
+                        try {                                                        
+                            let response_data = await self.proceso_data(paquete.data);		                                                        
                             self.emit('procesado',{
                                 'codigo':0,
                                 'mensaje':'Data Procesado Correctamente',
@@ -118,7 +125,8 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
                                     'data':paquete.data                                                                        
                                 });                                                                                        
                             }
-                        }        
+                        }     
+                        
                     } catch (error) {                        
                         self.emit('error',{
                             'codigo':4,
@@ -129,8 +137,9 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
                         });                                                      
                     } 
 
-                }            
-            } catch (error) {                
+                }                 
+            } catch (error) {  
+                self.semaforo_espera_activa=false;              
                 self.emit('error',{
                     'codigo':5,
                     'mensaje':'Error Chequeo de Cola',
@@ -214,6 +223,7 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
     // Inicia o Reanida el procesado de la cola
     this.start = function () {
         self.activo = true;
+        self.semaforo_espera_activa=false; 
         self.emit('start');
         self.control_time();
     }    
