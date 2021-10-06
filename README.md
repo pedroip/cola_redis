@@ -50,7 +50,7 @@ Todos los valores anteriormente son susceptibles de cambios durante la ejecució
 
 # Propiedades del objeto
 
-**add(<data>,[intentos_maximos])** : Añade un dato/valor  a la cola de procesamiento y opcionalmente se puede indicar cual es el numero maximo de intentos para esos datos.
+**add(data_a_procesar,[intentos_maximos])** : Añade un dato/valor  a la cola de procesamiento y opcionalmente se puede indicar cual es el numero maximo de intentos para esos datos.
 
 **start()**: inicia/reanuda el procesado de la cola.
 **stopt()**: para el procesado de la cola.
@@ -60,8 +60,11 @@ Todos los valores anteriormente son susceptibles de cambios durante la ejecució
 **lanzados()**: nos dice el número de procesos de la cola  actualmente en ejecución en la instancia.
 
 **en_espera()**: función síncrona/promesa que nos retorna el número de elementos en la cola a la espera de ser procesados.
+	
 **en_reintento()**: función síncrona/promesa que nos retorna el número de elementos en la cola de reintentos.
-**en_cola()**: función síncrona/promesa que nos retorna la suma de los elementos en la cola de espera y reintentos. 
+	
+**en_cola()**: función síncrona/promesa que nos retorna la suma de los elementos en la cola de espera y reintentos.
+	
 **ultimo()**: nos retorna el timestamp del último procesado de la instancia.
 
 Ejemplos: 
