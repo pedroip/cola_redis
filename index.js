@@ -107,7 +107,7 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
                             });
                         } catch (err) {                                                              
                             if (paquete.intentos>paquete.intentos_max) {                                
-                                self.emit('error',{
+                                self.emit('rechazado',{
                                     'codigo':6,
                                     'mensaje':'Error Maximos Reintentos Alcanzados',
                                     'origen':err,
@@ -188,7 +188,11 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
         if (self.activo) {
             self.check_cola();   
         }  
-         
+        
+        if (proximo_control_time<1000) {
+            proximo_control_time=1000;
+        }
+        
         self.ProcesoTimeout = setTimeout(self.control_time,proximo_control_time);            
     }    
 
@@ -239,12 +243,29 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
     }    
 
     // Para la cola y espera a que no queden procesos lanzados
-    this.end = function () {
+    this.end = async function () {
         self.stop();
         while (self.procesos_actuales>0) {
-            self.sleep(1000);
+           await self.sleep(1000);
         }
         self.emit('end');
+    }
+
+    // Borrado de las colas 
+    this.reset = async function () {
+        
+        try {
+            await util.promisify(self.db_redis.DEL).bind(self.db_redis)(self.nombre_cola);     
+            await util.promisify(self.db_redis.DEL).bind(self.db_redis)(self.reintento_nombre_cola);     
+        } catch (error) {        
+            self.emit('error',{
+                'codigo':8,
+                'mensaje':'Error en el Borrdo de las Colas',
+                'origen':error                                                   
+            });             
+            return false;
+        }    
+        return true;        
     }
 
     // Numero de Procesos en Ejecuciuón
@@ -255,8 +276,8 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
     // Numero de elementos en Cola (Total)
     this.en_cola =  async function  () {
         let total = 0;
-        total = total + await self.en_espera();
-        total = total + await self.en_reintento();
+        total += await self.en_espera();
+        total += await self.en_reintento();
         return total;
     }
 
