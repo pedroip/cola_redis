@@ -18,6 +18,7 @@ Nota: Para el correcto funcionamiento del procesado en diferentes equipos, es fu
 
 # Instanciar el objeto:
 
+
     const db_redis = redis.createClient('redis://xxx.xxx.xxx.xxx:6379?db=n');
     var envios = new cola_redis('pruebas_cola',db_redis,async function(data) {
         let aleatorio = Math.random();             
@@ -35,9 +36,10 @@ En ambos caso el procesado continuara en Cola Redis, ejecutando un evento en fun
 
  En la invocación a estos eventos ira toda la información necesaria para tomar las acciones oportunas, delegando estas acciones en el procesado de los eventos y dejar lo mas limpia posible la función de procesamiento.
 
+
 # Valores de creación. 
  
-new cola_redis(<nombre_lista_redis>,<objeto redis>,db_redis,async function(data) {<procesado de la data>});
+    new cola_redis(<nombre_lista_redis>,<objeto redis>,db_redis,async function(data) {<procesado de la data>});
 
 Los valores iniciales Cola Redis son:
 
@@ -79,7 +81,6 @@ Ejemplos:
         console.log('Lanzados: '+envios.lanzados());
         console.log('Ultimo: '+envios.ultimo());
     })();
-
 
 # eventos 
 
@@ -123,7 +124,6 @@ Ejemplo:
 
 
 # Códigos de Error:
-
 	1 - Error Push Cola Espera
 	2 - Error Push Reintento
 	3 - Error Push Retorno de Reintento
@@ -132,9 +132,4 @@ Ejemplo:
     6 - Error en el procesado y alcanzo el maximo de intentos
     7 - Error en el procesado, se reintentará el procesado
 	8 - Error en el Borrdo de las Colas
-
-
-
-
-
 
