@@ -18,19 +18,26 @@ La extracción de información de la cola se hará de forma ordenada con indepen
     const db_redis = redis.createClient('redis://xxx.xxx.xxx.xxx:6379?db=n');
     var envios = new cola_redis('pruebas_cola',db_redis,async function(data) {
         let aleatorio = Math.random();             
-        if (aleatorio<0.2) {            
-            throw 'Error Aleatorio. Reintentar Orden: '+data.orden;
+        if (aleatorio<0.3) {            
+            if (aleatorio<0.1) {
+                throw {'no_reintentar':true,error:'Error Aleatorio. No Reintentar Orden: '+data.orden};
+            } 
+            throw 'Error Aleatorio. Reintentar Orden: '+data.orden;            
         }
         else {            
             return 'Procesado Correctamente Orden: '+data.orden;        
         }             
     });
 
-El procesado de la data de la cola, será realizado por una función síncrona que tras hacer las operaciones oportuna retornará un valor en caso de que la ejecución sea correcta o una excepción (throw) en caso de error. 
+El procesado de la data de la cola, será realizado por una función asíncrona que tras hacer las operaciones oportuna retornará un valor en caso de que la ejecución sea correcta o una excepción (throw) en caso de error. 
 
 En ambos caso el procesado continuara en Cola Redis, ejecutando un evento en función de la situación   ‘procesado’ , ‘reintento’, ‘rechazado’ .
 
 En la invocación a estos eventos ira toda la información necesaria para tomar las acciones oportunas, delegando estas acciones en el procesado de los eventos y dejar lo mas limpia posible la función de procesamiento.
+
+En el caso de no querer hacer reintentos tras la invocación de *throw*, este debera enviar un objeto con la propiedad no_reintentar a true y otra propiedad con el error a inclier el la llamada al evento oportuno.  Ejemplo:  throw {no_reintentar:true,error:error_original};
+
+
 
 
 # Valores de creación
@@ -90,33 +97,33 @@ Ejemplos:
 **end**: Se finalizará la solicitud de end.
 
 **procesado**: Se informa que se ha completado el procesado de un elemento de la cola de forma correcta.  Se acompaña del objeto con la siguiente información.
-    codigo: 0 -> Ejecución correcta
-    mensaje: Información del evento en formato texto.
-    respuesta: información retornada por la función de procesado asociada a la instancia. 
-    intentos: número de intentos utilizados para llegar al éxito.
-    espera_ms: tiempo en milisegundos que ha permanecido en la cola la información antes de ser procesada.
-    data: información original de la cola que fue procesada.
+    - codigo: 0 -> Ejecución correcta
+    - mensaje: Información del evento en formato texto.
+    - respuesta: información retornada por la función de procesado asociada a la instancia. 
+    - intentos: número de intentos utilizados para llegar al éxito.
+    - espera_ms: tiempo en milisegundos que ha permanecido en la cola la información antes de ser procesada.
+    - data: información original de la cola que fue procesada.
 
 **reintento**: Se ha registrado un error de proceso y se intentará más tarde
-    codigo: 7 -> Error en el procesado y enviado a la cola de reintentos
-    mensaje: Información del evento en formato texto.
-    origen: error reportado por el procesador de la cola.. 
-    intentos: número de intentos acumulados
-    data: información original de la cola que fue procesada.
+    - codigo: 7 -> Error en el procesado y enviado a la cola de reintentos
+    - mensaje: Información del evento en formato texto.
+    - origen: error reportado por el procesador de la cola.. 
+    - intentos: número de intentos acumulados
+    - data: información original de la cola que fue procesada.
 
 **rechazado**: Se ha registrado un error de proceso y no se reintentara más.
-    codigo: 6 -> Error en el procesado y alcanzo el maximo de intentos
-    mensaje: Información del evento en formato texto.
-    origen: error reportado por el procesador de la cola.. 
-    intentos: número de intentos realizados.
-    data: información original de la cola que fue procesada.
+    - codigo: 6/9 -> Error en el procesado y alcanzo el maximo de intentos
+    - mensaje: Información del evento en formato texto.
+    - origen: error reportado por el procesador de la cola.. 
+    - intentos: número de intentos realizados.
+    - data: información original de la cola que fue procesada.
 
 **error**: Se ha detectado un error en la instancia de cola redis.
-    codigo:  Código de error producido.
-    mensaje: Información del evento en formato texto.
-    origen: error reportado por el procesador de la cola.. 
-    intentos: (opcional)  número de intentos
-    data: (opcional)  información original de la cola.
+    - codigo:  Código de error producido.
+    - mensaje: Información del evento en formato texto.
+    - origen: error reportado por el procesador de la cola.. 
+    - intentos: (opcional)  número de intentos
+    - data: (opcional)  información original de la cola.
 
 Ejemplo:
 	
@@ -135,3 +142,4 @@ Ejemplo:
 	6 - Error en el procesado y alcanzo el maximo de intentos
 	7 - Error en el procesado, se reintentará el procesado
 	8 - Error en el Borrdo de las Colas
+    9 - Error en el procesado y no se reintentara
