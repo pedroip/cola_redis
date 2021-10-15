@@ -105,8 +105,18 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
                                 'espera_ms':ahora.getTime()-paquete.created,
                                 'data':paquete.data                                                                                                        
                             });
-                        } catch (err) {                                                              
-                            if (paquete.intentos>paquete.intentos_max) {                                
+                        } catch (err) {    
+                            // Analizar Si queremo mas reintentos
+                            if (typeof err === 'object' && err.no_reintentar && err.error ) {
+                                self.emit('rechazado',{
+                                    'codigo':9,
+                                    'mensaje':'Error Sin Reintento',
+                                    'origen':err.error,
+                                    'intentos':paquete.intentos,
+                                    'data':paquete.data                                                                        
+                                });
+                            }
+                            else if (paquete.intentos>paquete.intentos_max) {                                
                                 self.emit('rechazado',{
                                     'codigo':6,
                                     'mensaje':'Error Maximos Reintentos Alcanzados',
