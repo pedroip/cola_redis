@@ -119,11 +119,11 @@ Ejemplos:
     - data: información original de la cola que fue procesada.
 
 **error**: Se ha detectado un error en la instancia de cola redis.
-    - codigo:  Código de error producido.
-    - mensaje: Información del evento en formato texto.
-    - origen: error reportado por el procesador de la cola.. 
-    - intentos: (opcional)  número de intentos
-    - data: (opcional)  información original de la cola.
+	- codigo:  Código de error producido.
+	- mensaje: Información del evento en formato texto.
+	- origen: error reportado por el procesador de la cola.. 
+	- intentos: (opcional)  número de intentos
+	- data: (opcional)  información original de la cola.
 
 Ejemplo:
 	
