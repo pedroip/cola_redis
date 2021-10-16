@@ -11,7 +11,7 @@ Permite regular el velocidad/ritmo de extracción de los elementos de la cola en
 Contempla un control de reintentos de un proceso de la cola en caso de fallo.
 La extracción de información de la cola se hará de forma ordenada con independencia del tiempo de finalización que dependera del tiempo de ejecución.
 
-*Nota: Para el correcto funcionamiento del procesado en diferentes equipos, es fundamental la sincronización de la hora entre ellos.*
+_Nota: Para el correcto funcionamiento del procesado en diferentes equipos, es fundamental la sincronización de la hora entre ellos._
 
 # Instanciar el objeto:
 
@@ -37,12 +37,9 @@ En la invocación a estos eventos ira toda la información necesaria para tomar 
 
 En el caso de no querer hacer reintentos tras la invocación de *throw*, este debera enviar un objeto con la propiedad no_reintentar a true y otra propiedad con el error a inclier el la llamada al evento oportuno.  Ejemplo:  throw {no_reintentar:true,error:error_original};
 
-
-
-
 # Valores de creación
  
-    new cola_redis(<nombre_lista_redis>,<objeto redis>,db_redis,async function(data) {<procesado de la data>});
+    var envios = new cola_redis(<nombre_lista_redis>,<objeto redis>,db_redis,async function(data) {<procesado de la data>});
 
 Los valores iniciales Cola Redis son:
 
@@ -55,10 +52,13 @@ Los valores iniciales Cola Redis son:
 
 Todos los valores anteriormente son susceptibles de cambios durante la ejecución alterando la operativa en el instante del cambio.
 
+	envios.procesos_maximos = 3; // Número máximo de procesos concurrente por instancia lo vajamos a 3
+	reintento_segundos = 60; // Cambiamos a 60 Segundos los reintentos entre envios fallidos
+
 # Propiedades del objeto
 
-**add(data_a_procesar,[intentos_maximos])** : Añade un dato/valor  a la cola de procesamiento y opcionalmente se puede indicar cual es el numero maximo de intentos para esos datos.
-
+**add(data_a_procesar,[intentos_maximos])** : Añade un dato/valor  a la cola de procesamiento y opcionalmente se puede indicar cual es el numero maximo de intentos para esos datos. Ejemplo:  envios.add({'orden':1,'mensaje':'Hola Mundo','url':'http://dominio/'}); 	
+   
 **start()**: inicia/reanuda el procesado de la cola.
 **stopt()**: para el procesado de la cola.
 **end()**: para el proceso de la cola y finaliza todos los procesos lanzados.
@@ -76,6 +76,8 @@ Todos los valores anteriormente son susceptibles de cambios durante la ejecució
 
 Ejemplos: 
 
+    envios.add({'orden':1,'mensaje':'Hola Mundo','url':'http://dominio/'},4);
+    
     envios.en_cola().then(function(result) {
         console.log('En Cola Promesa: '+result);
     });
@@ -97,33 +99,33 @@ Ejemplos:
 **end**: Se finalizará la solicitud de end.
 
 **procesado**: Se informa que se ha completado el procesado de un elemento de la cola de forma correcta.  Se acompaña del objeto con la siguiente información.
-    - codigo: 0 -> Ejecución correcta
-    - mensaje: Información del evento en formato texto.
-    - respuesta: información retornada por la función de procesado asociada a la instancia. 
-    - intentos: número de intentos utilizados para llegar al éxito.
-    - espera_ms: tiempo en milisegundos que ha permanecido en la cola la información antes de ser procesada.
-    - data: información original de la cola que fue procesada.
+* codigo: 0 -> Ejecución correcta
+* mensaje: Información del evento en formato texto.
+* respuesta: información retornada por la función de procesado asociada a la instancia. 
+* intentos: número de intentos utilizados para llegar al éxito.
+* espera_ms: tiempo en milisegundos que ha permanecido en la cola la información antes de ser procesada.
+* data: información original de la cola que fue procesada.
 
 **reintento**: Se ha registrado un error de proceso y se intentará más tarde
-    - codigo: 7 -> Error en el procesado y enviado a la cola de reintentos
-    - mensaje: Información del evento en formato texto.
-    - origen: error reportado por el procesador de la cola.. 
-    - intentos: número de intentos acumulados
-    - data: información original de la cola que fue procesada.
+* codigo: 7 -> Error en el procesado y enviado a la cola de reintentos
+* mensaje: Información del evento en formato texto.
+* origen: error reportado por el procesador de la cola.. 
+* intentos: número de intentos acumulados
+* data: información original de la cola que fue procesada.
 
 **rechazado**: Se ha registrado un error de proceso y no se reintentara más.
-    - codigo: 6/9 -> Error en el procesado y alcanzo el maximo de intentos
-    - mensaje: Información del evento en formato texto.
-    - origen: error reportado por el procesador de la cola.. 
-    - intentos: número de intentos realizados.
-    - data: información original de la cola que fue procesada.
+* codigo: 6/9 -> Error en el procesado y alcanzo el maximo de intentos
+* mensaje: Información del evento en formato texto.
+* origen: error reportado por el procesador de la cola.. 
+* intentos: número de intentos realizados.
+* data: información original de la cola que fue procesada.
 
 **error**: Se ha detectado un error en la instancia de cola redis.
-	- codigo:  Código de error producido.
-	- mensaje: Información del evento en formato texto.
-	- origen: error reportado por el procesador de la cola.. 
-	- intentos: (opcional)  número de intentos
-	- data: (opcional)  información original de la cola.
+* codigo:  Código de error producido.
+* mensaje: Información del evento en formato texto.
+* origen: error reportado por el procesador de la cola.. 
+* intentos: (opcional)  número de intentos
+* data: (opcional)  información original de la cola.
 
 Ejemplo:
 	
@@ -134,12 +136,73 @@ Ejemplo:
 
 # Códigos de Error:
 	
-	1 - Error Push Cola Espera
-	2 - Error Push Reintento
-	3 - Error Push Retorno de Reintento
-	4 - Error Call Procesado de Data
-	5 - Error Chequeo de Cola
-	6 - Error en el procesado y alcanzo el maximo de intentos
-	7 - Error en el procesado, se reintentará el procesado
-	8 - Error en el Borrdo de las Colas
-    9 - Error en el procesado y no se reintentara
+1. Error Push Cola Espera
+2. Error Push Reintento
+3. Error Push Retorno de Reintento
+4. Error Call Procesado de Data
+5. Error Chequeo de Cola
+6. Error en el procesado y alcanzo el maximo de intentos
+7. Error en el procesado, se reintentará el procesado
+8. Error en el Borrdo de las Colas
+9. Error en el procesado y no se reintentara
+
+# Codigo de Ejemplo test.js
+
+	"use strict";
+
+	const cola_redis = require('cola_redis');
+	const redis = require('redis');
+	const db_redis = redis.createClient('redis://xxx.xxx.xxx.xxx:6379?db=n');
+
+	var envios = new cola_redis('pruebas_cola',db_redis,async function(data) {
+
+		let aleatorio = Math.random();             
+		if (aleatorio<0.2) {            
+		    throw 'Error Aleatorio. Reintentar Orden: '+data.orden;
+		}
+		else {            
+		    return 'Procesado Correctamente Orden: '+data.orden;        
+		}     
+
+	});
+
+	envios.envios_max_segundo=2;
+	envios.procesos_maximos=7;
+	envios.reintento_numero=5;
+	envios.reintento_segundos=60;
+
+	envios.on('error',function(proceso) {
+	    console.error('Evento de ERROR',proceso);
+	})
+
+	envios.on('reintento',function(proceso) {
+	    console.error('Evento de REINTENTO Orden:'+proceso.data.orden+' en '+proceso.intentos+' intentos. '+new Date());
+	})
+
+	envios.on('procesado',function(proceso) {    
+	   console.log('Evento de PROCESADO Orden:'+proceso.data.orden+' en '+proceso.intentos+' intentos. '+new Date());
+	})
+
+	envios.on('start',function() {    
+	    console.log('Evento Cola Iniciada: '+new Date());
+	})
+
+	// Añadir Elementos a la cola
+	for (let i = 0; i < 30; i++) {
+	    envios.add({'nombre':'Pedro','apellidos':'Casas','orden':i});
+	}
+
+	envios.start();
+
+	envios.en_cola().then(function(result) {
+	    console.log('En Cola Promesa: '+result);
+	});
+
+	(async () => {
+	    console.log('En Espera: '+await envios.en_espera());
+	    console.log('En Reintento: '+await  envios.en_reintento());
+	    console.log('En Cola Async: '+await  envios.en_cola());
+	    console.log('Lanzados: '+envios.lanzados());
+	    console.log('Ultimo: '+envios.ultimo());
+	  })();
+
