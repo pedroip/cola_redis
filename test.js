@@ -16,7 +16,7 @@ var envios = new cola_redis('pruebas_cola',db_redis,async function(data) {
         
 });
 
-envios.envios_max_segundo=0;
+envios.envios_max_segundo=2;
 envios.procesos_maximos=7;
 envios.reintento_numero=5;
 envios.reintento_segundos=60;
@@ -39,7 +39,7 @@ envios.on('start',function() {
 
 // Añadir Elementos a la cola
 for (let i = 0; i < 30; i++) {
-    envios.add({'nombre':'Pedro','apellidos':'Casas de León','orden':i});
+    envios.add({'nombre':'Pedro','apellidos':'Casas','orden':i});
 }
 
 envios.start();

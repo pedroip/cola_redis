@@ -216,7 +216,11 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
     // ----------------------------------------------------------------------------------------------
     
     // Añade un conjunto de datos a la cola para su procesado ordenado
-    this.add = function (data,intentos_max=5) {
+    this.add = function (data,intentos_max=-1) {
+
+        if (intentos_max<0) {
+            intentos_max=self.reintento_numero;
+        }
 
         let paquete = {
             "created":new Date().getTime(),
@@ -225,7 +229,7 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
             "intentos_max":intentos_max,            
             "data":data
         }
-        
+             
         self.push_cola(paquete,function() {   
             if (self.activo) {        
                 self.check_cola();
