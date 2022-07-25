@@ -1,6 +1,6 @@
 {
   "name": "cola_redis",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Gestión de una cola de procesos con gestión de Reintentos, Concurrencia y Cadencia",
   "main": "./index.js",
   "scripts": {

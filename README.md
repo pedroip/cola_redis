@@ -38,8 +38,6 @@ En la invocación a estos eventos ira toda la información necesaria para tomar 
 En el caso de no querer hacer reintentos tras la invocación de *throw*, este debera enviar un objeto con la propiedad no_reintentar a true y otra propiedad con el error a inclier el la llamada al evento oportuno.  Ejemplo:  throw {no_reintentar:true,error:error_original};
 
 
-
-
 # Valores de creación
  
     new cola_redis(<nombre_lista_redis>,<objeto redis>,db_redis,async function(data) {<procesado de la data>});
