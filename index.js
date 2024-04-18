@@ -14,7 +14,12 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
 
     this.db_redis = conexion_redis;
 
+    this.nombre_cola_rapida = nombre_cola+':rapida';
+    this.rapida_activa = 0;
     this.nombre_cola = nombre_cola+':cola';
+    this.nombre_cola_lenta = nombre_cola+':lenta';
+    this.lenta_activa = 0;
+    
     this.procesos_maximos = 5;  
     this.procesos_actuales = 0;
 
@@ -28,10 +33,19 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
 
     this.ProcesoTimeout = null; 
 
-    this.push_cola = function (paquete,callback) {
+    // Normal. Rapida y Lenta N.R.L
+    this.push_cola = function (paquete,tipo='N',callback) {
+
+        var nombre_cola = self.nombre_cola;        
+        if (tipo=='R') {
+            nombre_cola = self.nombre_cola_rapida;              
+        }
+        else if (tipo=='L') {
+            nombre_cola = self.nombre_cola_lenta;    
+        }
 
         self.db_redis.LPUSH(
-            self.nombre_cola,
+            nombre_cola,
             JSON.stringify(paquete),
             function(err, reply) {			
                 if (err) {
@@ -43,8 +57,16 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
                         'data':paquete.data                                        
                     });                                				
                 }			
-                else if (callback && self.activo) {	                    							
-                    callback(reply)
+                else {
+                    if (tipo=='R') {
+                        self.rapida_activa=1;
+                    }
+                    else if (tipo=='L') {
+                        self.lenta_activa=1;
+                    }
+                    if (callback && self.activo) { 
+                        callback(reply); 
+                    }
                 }	
             }
         );     
@@ -87,9 +109,37 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
                     }
                 }
 
-                self.semaforo_espera_activa=true;
-                paquete = JSON.parse(await util.promisify(self.db_redis.RPOP).bind(self.db_redis)(self.nombre_cola));                
-                self.semaforo_espera_activa=false;
+                
+                //Gestion de Colas Preferentes                
+                //----------------------------
+                try {
+                    self.semaforo_espera_activa=true;    
+                    paquete==null;
+                    // RAPIDA 
+                    if (self.rapida_activa==1) {
+                        paquete = JSON.parse(await util.promisify(self.db_redis.RPOP).bind(self.db_redis)(self.nombre_cola_rapida));
+                        if (paquete==null) {
+                            self.rapida_activa=0; 
+                        }            
+                    } 
+                    // NORMAL 
+                    if (paquete==null) {
+                        paquete = JSON.parse(await util.promisify(self.db_redis.RPOP).bind(self.db_redis)(self.nombre_cola));                        
+                    }                    
+                    // LENTA
+                    if (paquete==null && self.lenta_activa==1) {
+                        paquete = JSON.parse(await util.promisify(self.db_redis.RPOP).bind(self.db_redis)(self.nombre_cola_lenta));
+                        if (paquete==null) {
+                            self.lenta_activa=0; 
+                        }                                   
+                    }    
+                } catch (error) {
+                    throw error    
+                } finally {
+                    self.semaforo_espera_activa=false;
+                }      
+                //-----------------------------
+                
 
                 if (paquete) {                    
                     try {                        
@@ -216,7 +266,7 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
     // ----------------------------------------------------------------------------------------------
     
     // Añade un conjunto de datos a la cola para su procesado ordenado
-    this.add = function (data,intentos_max=-1) {
+    this.add = function (data,intentos_max=-1,tipo='N') {
 
         if (intentos_max<0) {
             intentos_max=self.reintento_numero;
@@ -230,17 +280,26 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
             "data":data
         }
              
-        self.push_cola(paquete,function() {   
+        self.push_cola(paquete,tipo,function() {   
             if (self.activo) {        
                 self.check_cola();
             }    
-        });
-       
+        });           
     }
-    
+
+    this.add_lenta = function (data,intentos_max=-1) {
+        self.add(data,intentos_max,'L');     
+    }
+
+    this.add_rapida = function (data,intentos_max=-1) {
+        self.add(data,intentos_max,'R');     
+    }
+               
     // Inicia o Reanida el procesado de la cola
     this.start = function () {
         self.activo = true;
+        self.lenta_activa = 0;
+        self.rapida_activa = 0;
         self.semaforo_espera_activa=false; 
         self.emit('start');
         self.control_time();
@@ -270,6 +329,8 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
         
         try {
             await util.promisify(self.db_redis.DEL).bind(self.db_redis)(self.nombre_cola);     
+            await util.promisify(self.db_redis.DEL).bind(self.db_redis)(self.nombre_cola_lenta);     
+            await util.promisify(self.db_redis.DEL).bind(self.db_redis)(self.nombre_cola_rapida);     
             await util.promisify(self.db_redis.DEL).bind(self.db_redis)(self.reintento_nombre_cola);     
         } catch (error) {        
             self.emit('error',{
@@ -295,19 +356,86 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
         return total;
     }
 
+
+    
+
     // Numero de elementos en Espera
-    this.en_espera =  async function  () {
+    this.en_espera_old =  async function  () {
         let paquetes = 0
+        let paquetes_lentos = 0;
+        let paquetes_rapidos = 0;
         try {
             paquetes = await util.promisify(self.db_redis.LLEN).bind(self.db_redis)(self.nombre_cola); 
             if (isNaN(paquetes)) {
                 paquetes = 0;
             }
+
+            paquetes_lentos = await util.promisify(self.db_redis.LLEN).bind(self.db_redis)(self.nombre_cola_lenta); 
+            if (isNaN(paquetes_lentos)) {
+                paquetes_lentos = 0;
+            } else {
+                self.lenta_activa=1;
+            }
+
+            paquetes_rapidos = await util.promisify(self.db_redis.LLEN).bind(self.db_redis)(self.nombre_cola_rapida); 
+            if (isNaN(paquetes_rapidos)) {
+                paquetes_rapidos = 0;
+            } else {
+                self.rapida_activa=1;
+            }
+
         } catch (err) {
             paquetes = 0;   
+            paquetes_lentos = 0;
+            paquetes_rapidos = 0;
         }    
-        return paquetes;    
+        return paquetes+paquetes_lentos+paquetes_rapidos;    
     }
+ 
+    // Numero de elementos en Espera Lentos
+    this.en_espera =  async function (tipo=null) {
+        let nombre_cola = null;
+        let paquetes = 0        
+
+        // Normales
+        if (tipo=='N') {
+            nombre_cola = self.nombre_cola; 
+        }
+        // Lentas
+        else if (tipo=='L') {
+            nombre_cola = self.nombre_cola_lenta; 
+        }
+        // Rapidas
+        else if (tipo=='R') {
+            nombre_cola = self.nombre_cola_rapida; 
+        }   
+        // Todas
+        else {
+            let total = 0;
+            total += await self.en_espera('L');
+            total += await self.en_espera('N');
+            total += await self.en_espera('R');
+            return total;
+        }
+
+        try {            
+            paquetes = await util.promisify(self.db_redis.LLEN).bind(self.db_redis)(nombre_cola); 
+            if (isNaN(paquetes)) {
+                paquetes = 0;
+            } 
+        } catch (err) {
+            paquetes = 0;               
+        }    
+
+        if (paquetes>0) {
+            if (tipo=='L') self.lenta_activa=1;          
+            else if (tipo=='R') self.rapida_activa=1;          
+        } 
+
+        return paquetes;
+    }
+
+
 
     // Numero de elementos en Reintento
     this.en_reintento =  async function  () {

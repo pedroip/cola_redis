@@ -1,6 +1,6 @@
 {
   "name": "cola_redis",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Gestión de una cola de procesos con gestión de Reintentos, Concurrencia y Cadencia",
   "main": "./index.js",
   "scripts": {
@@ -10,7 +10,7 @@
   "author": "Pedro Miguel Casas de León",
   "license": "ISC",
   "dependencies": {
-    "events": "^3.3.0",
+    "events": "<=3.3.0",
     "redis": "^3.1.2"
   },
   "repository": {
