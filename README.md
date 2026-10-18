@@ -39,7 +39,7 @@ En el caso de no querer hacer reintentos tras la invocación de *throw*, este de
 
 # Valores de creación
  
-    var envios = new cola_redis(<nombre_lista_redis>,<objeto redis>,db_redis,async function(data) {<procesado de la data>});
+    var envios = new cola_redis(<nombre_lista_redis>,<objeto redis>,async function(data) {<procesado de la data>});
 
 Los valores iniciales Cola Redis son:
 
@@ -47,6 +47,7 @@ Los valores iniciales Cola Redis son:
     reintento_segundos = 120; // Segundos entre reintentos  del procesado
     reintento_numero = 6; // Número por defecto de reintentos, se puede personalizar en cada entrda
     envios_max_segundo = 0; // Número máximo de envíos por segundo en la instancia con independencia del número de procesos máximos. El valor 0 indica que no hay limitación.
+    chequeo_segundos = 1; // Intervalo máximo entre chequeos de la cola, para detectar los elementos añadidos por otras instancias.
 
 # Variables de parametrización. 
 
@@ -60,7 +61,7 @@ Todos los valores anteriormente son susceptibles de cambios durante la ejecució
 **add(data_a_procesar,[intentos_maximos])** : Añade un dato/valor  a la cola de procesamiento y opcionalmente se puede indicar cual es el numero maximo de intentos para esos datos. Ejemplo:  envios.add({'orden':1,'mensaje':'Hola Mundo','url':'http://dominio/'}); 	
    
 **start()**: inicia/reanuda el procesado de la cola.
-**stopt()**: para el procesado de la cola.
+**stop()**: para el procesado de la cola.
 **end()**: para el proceso de la cola y finaliza todos los procesos lanzados.
 **reset()**: Borrar todos los elementos de la cola de espera y reintentos.
 
@@ -145,6 +146,7 @@ Ejemplo:
 7. Error en el procesado, se reintentará el procesado
 8. Error en el Borrdo de las Colas
 9. Error en el procesado y no se reintentara
+10. Error en el control de reintentos (fallo de redis en el bucle de control)
 
 # Codigo de Ejemplo test.js
 
@@ -206,3 +208,15 @@ Ejemplo:
 	    console.log('Ultimo: '+envios.ultimo());
 	  })();
 
+
+# Desarrollo y pruebas
+
+El comportamiento completo de la librería está descrito en [docs/ESPECIFICACION.md](docs/ESPECIFICACION.md), y cada requisito está cubierto por el arnés de pruebas de `test/`.
+
+El entorno de desarrollo usa Docker (Redis 7 y Node 22):
+
+    docker compose up -d redis          # Redis en localhost:6379
+    docker compose run --rm app npm test  # Ejecuta los tests
+    docker compose run --rm app         # Ejecuta el ejemplo test.js (Ctrl+C para salir)
+
+Si un antivirus o proxy inspecciona el tráfico HTTPS, copia su certificado raíz (formato PEM, extensión `.crt`) en la carpeta `certs/` antes de `docker compose build`.

@@ -15,11 +15,9 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
     this.db_redis = conexion_redis;
 
     this.nombre_cola_rapida = nombre_cola+':rapida';
-    this.rapida_activa = 0;
     this.nombre_cola = nombre_cola+':cola';
     this.nombre_cola_lenta = nombre_cola+':lenta';
-    this.lenta_activa = 0;
-    
+
     this.procesos_maximos = 5;  
     this.procesos_actuales = 0;
 
@@ -31,7 +29,12 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
     this.envios_ultimo = null; // Valor en MS
     this.semaforo_espera_activa = false;
 
-    this.ProcesoTimeout = null; 
+    // Intervalo máximo entre chequeos de la cola, para detectar elementos añadidos por otras instancias
+    this.chequeo_segundos = 1;
+
+    this.ProcesoTimeout = null;
+    // Se incrementa en cada start/stop para invalidar bucles de control anteriores
+    this.ciclo_control = 0;
 
     // Normal. Rapida y Lenta N.R.L
     this.push_cola = function (paquete,tipo='N',callback) {
@@ -58,16 +61,10 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
                     });                                				
                 }			
                 else {
-                    if (tipo=='R') {
-                        self.rapida_activa=1;
+                    if (callback && self.activo) {
+                        callback(reply);
                     }
-                    else if (tipo=='L') {
-                        self.lenta_activa=1;
-                    }
-                    if (callback && self.activo) { 
-                        callback(reply); 
-                    }
-                }	
+                }
             }
         );     
 
@@ -102,62 +99,67 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
 
                 // Control del ritmo Antes de leer de la cola
                 if (self.envios_max_segundo>0) {
-                    let pausa =  (1/self.envios_max_segundo)*1000;                                  
+                    let pausa =  (1/self.envios_max_segundo)*1000;
                     while (self.semaforo_espera_activa || (self.envios_ultimo && self.envios_ultimo+pausa>ahora.getTime()) ) {
-                        await self.sleep(self.envios_ultimo+pausa-ahora.getTime()); 
+                        let espera = self.envios_ultimo ? self.envios_ultimo+pausa-ahora.getTime() : 0;
+                        await self.sleep(Math.max(espera,5));
                         ahora = new Date();
                     }
                 }
 
-                
-                //Gestion de Colas Preferentes                
-                //----------------------------
-                try {
-                    self.semaforo_espera_activa=true;    
-                    paquete==null;
-                    // RAPIDA 
-                    if (self.rapida_activa==1) {
-                        paquete = JSON.parse(await util.promisify(self.db_redis.RPOP).bind(self.db_redis)(self.nombre_cola_rapida));
-                        if (paquete==null) {
-                            self.rapida_activa=0; 
-                        }            
-                    } 
-                    // NORMAL 
-                    if (paquete==null) {
-                        paquete = JSON.parse(await util.promisify(self.db_redis.RPOP).bind(self.db_redis)(self.nombre_cola));                        
-                    }                    
-                    // LENTA
-                    if (paquete==null && self.lenta_activa==1) {
-                        paquete = JSON.parse(await util.promisify(self.db_redis.RPOP).bind(self.db_redis)(self.nombre_cola_lenta));
-                        if (paquete==null) {
-                            self.lenta_activa=0; 
-                        }                                   
-                    }    
-                } catch (error) {
-                    throw error    
-                } finally {
-                    self.semaforo_espera_activa=false;
-                }      
-                //-----------------------------
-                
 
-                if (paquete) {                    
-                    try {                        
-                        paquete.intentos++;                        
-                        self.envios_ultimo = ahora.getTime();                                         
-                        try {                                                        
-                            let response_data = await self.proceso_data(paquete.data);		                                                        
+                //Gestion de Colas Preferentes
+                //----------------------------
+                // Se consultan siempre las tres listas, pueden tener datos de otras instancias o de antes del start
+                if (self.activo) {
+                    try {
+                        self.semaforo_espera_activa=true;
+                        paquete = await self.extraer(self.nombre_cola_rapida,'R');
+                        if (paquete==null) {
+                            paquete = await self.extraer(self.nombre_cola,'N');
+                        }
+                        if (paquete==null) {
+                            paquete = await self.extraer(self.nombre_cola_lenta,'L');
+                        }
+                    } finally {
+                        self.semaforo_espera_activa=false;
+                    }
+                }
+                //-----------------------------
+
+
+                if (paquete) {
+                    try {
+                        paquete.intentos++;
+                        self.envios_ultimo = ahora.getTime();
+                        // Hay datos: si queda capacidad se lanza otro proceso en paralelo
+                        // (después de registrar envios_ultimo para respetar la cadencia)
+                        if (self.activo && self.procesos_actuales<self.procesos_maximos) {
+                            self.check_cola();
+                        }
+                        let response_data = null;
+                        let error_proceso = null;
+                        let fallo = false;
+                        try {
+                            response_data = await self.proceso_data(paquete.data);
+                        } catch (err) {
+                            fallo = true;
+                            error_proceso = err;
+                        }
+                        // Los eventos se emiten fuera del try del proceso: un error en un oyente no debe provocar reintentos
+                        if (!fallo) {
                             self.emit('procesado',{
                                 'codigo':0,
                                 'mensaje':'Data Procesado Correctamente',
                                 'respuesta':response_data,
                                 'intentos':paquete.intentos,
                                 'espera_ms':ahora.getTime()-paquete.created,
-                                'data':paquete.data                                                                                                        
+                                'data':paquete.data
                             });
-                        } catch (err) {    
+                        } else {
+                            let err = error_proceso;
                             // Analizar Si queremo mas reintentos
-                            if (typeof err === 'object' && err.no_reintentar && err.error ) {
+                            if (err && typeof err === 'object' && err.no_reintentar && err.error ) {
                                 self.emit('rechazado',{
                                     'codigo':9,
                                     'mensaje':'Error Sin Reintento',
@@ -213,48 +215,82 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
         }                
     }
 
-    this.control_time = async function () {
-        
-        let proximo_control_time = self.reintento_segundos*1000;
-        let reintento_fin=new Date().getTime()-proximo_control_time; 
-        let paquete = null;
-        do {
-            paquete = JSON.parse(await util.promisify(self.db_redis.RPOP).bind(self.db_redis)(self.reintento_nombre_cola));              
-            if (paquete) {
-                if (paquete.intento_time<reintento_fin) {
-                    self.push_cola(paquete);
-                } else {
-                    proximo_control_time = paquete.intento_time-reintento_fin;
-                    self.db_redis.RPUSH(
-                        self.reintento_nombre_cola,
-                        JSON.stringify(paquete),
-                        function(err, reply) {			
-                            if (err) {
-                                self.emit('error',{
-                                    'codigo':3,
-                                    'mensaje':'Error Push Retorno de Reintento',                                    
-                                    'origen':err,                                    
-                                    'intentos':paquete.intentos,
-                                    'data':paquete.data                                    
-                                });                                				
-                            }			                
-                        }
-                    );    
-                    paquete=null;
-                }
-            }    
-        } while (paquete); 
-
-        if (self.activo) {
-            self.check_cola();   
-        }  
-        
-        if (proximo_control_time<1000) {
-            proximo_control_time=1000;
+    // Extrae el paquete más antiguo de una lista anotando su tipo de origen (para conservarlo en los reintentos)
+    this.extraer = async function (nombre_lista,tipo) {
+        let paquete = JSON.parse(await util.promisify(self.db_redis.RPOP).bind(self.db_redis)(nombre_lista));
+        if (paquete && typeof paquete === 'object') {
+            paquete.tipo = tipo;
         }
-        
-        self.ProcesoTimeout = setTimeout(self.control_time,proximo_control_time);            
-    }    
+        return paquete;
+    }
+
+    // Bucle de control: devuelve a su cola los reintentos vencidos y chequea la cola.
+    // Solo sigue vivo mientras la cola esté activa y no haya habido otro start/stop (ciclo).
+    this.control_time = async function (ciclo = self.ciclo_control) {
+
+        self.ProcesoTimeout = null;
+        let proximo_control_time = self.reintento_segundos*1000;
+        try {
+            let reintento_fin=new Date().getTime()-proximo_control_time;
+            let paquete = null;
+            do {
+                paquete = null;
+                // Se mira el más antiguo sin sacarlo; solo se extrae si ya ha vencido
+                let siguiente = JSON.parse(await util.promisify(self.db_redis.LINDEX).bind(self.db_redis)(self.reintento_nombre_cola,-1));
+                if (!siguiente) {
+                    break;
+                }
+                if (siguiente.intento_time>=reintento_fin) {
+                    proximo_control_time = siguiente.intento_time-reintento_fin;
+                    break;
+                }
+                paquete = JSON.parse(await util.promisify(self.db_redis.RPOP).bind(self.db_redis)(self.reintento_nombre_cola));
+                if (paquete) {
+                    if (paquete.intento_time<reintento_fin) {
+                        self.push_cola(paquete,paquete.tipo||'N');
+                    } else {
+                        // Otra instancia se adelantó y el extraído aún no ha vencido: se devuelve a su sitio
+                        const devuelto = paquete;
+                        proximo_control_time = devuelto.intento_time-reintento_fin;
+                        self.db_redis.RPUSH(
+                            self.reintento_nombre_cola,
+                            JSON.stringify(devuelto),
+                            function(err, reply) {
+                                if (err) {
+                                    self.emit('error',{
+                                        'codigo':3,
+                                        'mensaje':'Error Push Retorno de Reintento',
+                                        'origen':err,
+                                        'intentos':devuelto.intentos,
+                                        'data':devuelto.data
+                                    });
+                                }
+                            }
+                        );
+                        paquete=null;
+                    }
+                }
+            } while (paquete && ciclo===self.ciclo_control);
+
+            if (self.activo && ciclo===self.ciclo_control) {
+                self.check_cola();
+            }
+        } catch (error) {
+            self.emit('error',{
+                'codigo':10,
+                'mensaje':'Error Control de Reintentos',
+                'origen':error
+            });
+        } finally {
+            if (self.activo && ciclo===self.ciclo_control) {
+                proximo_control_time = Math.min(proximo_control_time,self.chequeo_segundos*1000);
+                if (proximo_control_time<100) {
+                    proximo_control_time=100;
+                }
+                self.ProcesoTimeout = setTimeout(() => self.control_time(ciclo),proximo_control_time);
+            }
+        }
+    }
 
     this.sleep = function (ms) {        
         return new Promise((resolve) => {
@@ -298,16 +334,21 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
     // Inicia o Reanida el procesado de la cola
     this.start = function () {
         self.activo = true;
-        self.lenta_activa = 0;
-        self.rapida_activa = 0;
-        self.semaforo_espera_activa=false; 
+        self.semaforo_espera_activa=false;
+        // Un nuevo ciclo invalida cualquier bucle de control previo (evita duplicados con start() repetidos)
+        self.ciclo_control++;
+        if (self.ProcesoTimeout) {
+            clearTimeout(self.ProcesoTimeout);
+            self.ProcesoTimeout=null;
+        }
         self.emit('start');
-        self.control_time();
-    }    
+        self.control_time(self.ciclo_control);
+    }
 
     // Detiene el procesamiento de la cola
     this.stop = function () {
         self.activo = false;
+        self.ciclo_control++;
         if (self.ProcesoTimeout) {
             clearTimeout(self.ProcesoTimeout);
             self.ProcesoTimeout=null;
@@ -359,37 +400,9 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
 
     
 
-    // Numero de elementos en Espera
+    // Obsoleto: se mantiene por compatibilidad, usar en_espera()
     this.en_espera_old =  async function  () {
-        let paquetes = 0
-        let paquetes_lentos = 0;
-        let paquetes_rapidos = 0;
-        try {
-            paquetes = await util.promisify(self.db_redis.LLEN).bind(self.db_redis)(self.nombre_cola); 
-            if (isNaN(paquetes)) {
-                paquetes = 0;
-            }
-
-            paquetes_lentos = await util.promisify(self.db_redis.LLEN).bind(self.db_redis)(self.nombre_cola_lenta); 
-            if (isNaN(paquetes_lentos)) {
-                paquetes_lentos = 0;
-            } else {
-                self.lenta_activa=1;
-            }
-
-            paquetes_rapidos = await util.promisify(self.db_redis.LLEN).bind(self.db_redis)(self.nombre_cola_rapida); 
-            if (isNaN(paquetes_rapidos)) {
-                paquetes_rapidos = 0;
-            } else {
-                self.rapida_activa=1;
-            }
-
-        } catch (err) {
-            paquetes = 0;   
-            paquetes_lentos = 0;
-            paquetes_rapidos = 0;
-        }    
-        return paquetes+paquetes_lentos+paquetes_rapidos;    
+        return self.en_espera();
     }
  
     // Numero de elementos en Espera Lentos
@@ -424,13 +437,8 @@ function cola_redis(nombre_cola,conexion_redis,proceso_data) {
                 paquetes = 0;
             } 
         } catch (err) {
-            paquetes = 0;               
-        }    
-
-        if (paquetes>0) {
-            if (tipo=='L') self.lenta_activa=1;          
-            else if (tipo=='R') self.rapida_activa=1;          
-        } 
+            paquetes = 0;
+        }
 
         return paquetes;
     }
