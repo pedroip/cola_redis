@@ -60,9 +60,11 @@ Todos los valores anteriormente son susceptibles de cambios durante la ejecució
 
 **add(data_a_procesar,[intentos_maximos])** : Añade un dato/valor  a la cola de procesamiento y opcionalmente se puede indicar cual es el numero maximo de intentos para esos datos. Ejemplo:  envios.add({'orden':1,'mensaje':'Hola Mundo','url':'http://dominio/'}); 	
    
+**add_lote(array_de_datos,[intentos_maximos],[tipo])**: Añade varios datos de una vez (un único comando a Redis por cada bloque de 1 000). Se procesan en el orden del array. `tipo` es 'N' (normal, por defecto), 'R' (rápida) o 'L' (lenta). Ejemplo: envios.add_lote([{'orden':1},{'orden':2}]);
+
 **start()**: inicia/reanuda el procesado de la cola.
 **stop()**: para el procesado de la cola.
-**end()**: para el proceso de la cola y finaliza todos los procesos lanzados.
+**end()**: para el proceso de la cola y espera a que terminen todos los procesos lanzados (resuelve en cuanto acaba el último).
 **reset()**: Borrar todos los elementos de la cola de espera y reintentos.
 
 **lanzados()**: nos dice el número de procesos de la cola  actualmente en ejecución en la instancia.
@@ -218,5 +220,9 @@ El entorno de desarrollo usa Docker (Redis 7 y Node 22):
     docker compose up -d redis          # Redis en localhost:6379
     docker compose run --rm app npm test  # Ejecuta los tests
     docker compose run --rm app         # Ejecuta el ejemplo test.js (Ctrl+C para salir)
+
+Requisitos de Redis: con Redis ≥ 7 cada extracción usa `LMPOP`; con versiones anteriores se usa automáticamente un script Lua equivalente.
+
+Medición de rendimiento: `docker compose run --rm app node bench/rendimiento.js` (ver [docs/RENDIMIENTO.md](docs/RENDIMIENTO.md)).
 
 Si un antivirus o proxy inspecciona el tráfico HTTPS, copia su certificado raíz (formato PEM, extensión `.crt`) en la carpeta `certs/` antes de `docker compose build`.
