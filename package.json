@@ -3,6 +3,10 @@
   "version": "1.1.0",
   "description": "Gestión de una cola de procesos con gestión de Reintentos, Concurrencia y Cadencia",
   "main": "./index.js",
+  "files": [
+    "index.js",
+    "docs/"
+  ],
   "scripts": {
     "test": "node --test --test-timeout=30000 \"test/**/*.test.js\"",
     "test:docker": "docker compose run --rm app npm test"
