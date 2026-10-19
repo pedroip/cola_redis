@@ -211,18 +211,6 @@ Ejemplo:
 	  })();
 
 
-# Desarrollo y pruebas
+# Requisitos
 
-El comportamiento completo de la librería está descrito en [docs/ESPECIFICACION.md](docs/ESPECIFICACION.md), y cada requisito está cubierto por el arnés de pruebas de `test/`.
-
-El entorno de desarrollo usa Docker (Redis 7 y Node 22):
-
-    docker compose up -d redis          # Redis en localhost:6379
-    docker compose run --rm app npm test  # Ejecuta los tests
-    docker compose run --rm app         # Ejecuta el ejemplo test.js (Ctrl+C para salir)
-
-Requisitos de Redis: con Redis ≥ 7 cada extracción usa `LMPOP`; con versiones anteriores se usa automáticamente un script Lua equivalente.
-
-Medición de rendimiento: `docker compose run --rm app node bench/rendimiento.js` (ver [docs/RENDIMIENTO.md](docs/RENDIMIENTO.md)).
-
-Si un antivirus o proxy inspecciona el tráfico HTTPS, copia su certificado raíz (formato PEM, extensión `.crt`) en la carpeta `certs/` antes de `docker compose build`.
+Cliente `redis` v3 (incluido como dependencia). Con Redis ≥ 7 cada extracción usa `LMPOP`; con versiones anteriores se usa automáticamente un script Lua equivalente.
